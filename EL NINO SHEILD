@@ -1,0 +1,116 @@
+#include <Wire.h>
+#include <Servo.h>
+#include <LiquidCrystal_I2C.h>
+// LCD configuration
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Servo inletServo;
+// Pin configuration
+#define RAIN_SENSOR A0
+#define TRIG 9
+#define ECHO 10
+#define SERVO_PIN 6
+#define BUZZER 8
+#define GREEN_LED 4
+#define RED_LED 5
+// Adjust after testing your rain sensor
+#define RAIN_THRESHOLD 500
+// Distance from sensor to water surface (cm)
+// Smaller distance means a higher water level.
+#define FULL_DISTANCE 5
+long duration;
+float distance;
+int rainValue;
+float getDistance() {
+digitalWrite(TRIG, LOW);
+delayMicroseconds(2);
+digitalWrite(TRIG, HIGH);
+delayMicroseconds(10);
+digitalWrite(TRIG, LOW);
+duration = pulseIn(ECHO, HIGH, 30000);
+if (duration == 0) {
+return -1;
+}
+return duration * 0.0343 / 2.0;
+}
+// Always switch both LEDs off before setting the required one.
+void setLEDs(bool greenState, bool redState) {
+digitalWrite(GREEN_LED, LOW);
+digitalWrite(RED_LED, LOW);
+digitalWrite(GREEN_LED, greenState ? HIGH : LOW);
+digitalWrite(RED_LED, redState ? HIGH : LOW);
+}
+void setup() {
+Serial.begin(9600);
+pinMode(RAIN_SENSOR, INPUT);
+pinMode(TRIG, OUTPUT);
+pinMode(ECHO, INPUT);
+pinMode(BUZZER, OUTPUT);
+pinMode(GREEN_LED, OUTPUT);
+pinMode(RED_LED, OUTPUT);
+inletServo.attach(SERVO_PIN);
+setLEDs(false, false);
+digitalWrite(BUZZER, LOW);
+inletServo.write(0); // Gate closed
+lcd.init();
+lcd.backlight();
+lcd.setCursor(0, 0);
+lcd.print("RAIN HARVESTING");
+lcd.setCursor(0, 1);
+lcd.print("SYSTEM READY");
+delay(2000);
+lcd.clear();
+}
+void loop() {
+rainValue = analogRead(RAIN_SENSOR);
+distance = getDistance();
+// Many rain sensor modules give a lower analog value when wet.
+// Verify this behavior with your own module.
+bool raining = (rainValue < RAIN_THRESHOLD);
+Serial.print("Rain Value: ");
+Serial.print(rainValue);
+Serial.print(" | Water Distance: ");
+Serial.println(distance);
+// Start each cycle with both LEDs and buzzer OFF.
+setLEDs(false, false);
+digitalWrite(BUZZER, LOW);
+lcd.clear();
+// Condition 1: Ultrasonic sensor error
+if (distance < 0) {
+inletServo.write(0);
+setLEDs(false, true);
+digitalWrite(BUZZER, HIGH);
+lcd.setCursor(0, 0);
+lcd.print("SENSOR ERROR");
+lcd.setCursor(0, 1);
+lcd.print("CHECK SENSOR");
+}
+// Condition 2: Pit is full
+else if (distance <= FULL_DISTANCE) {
+inletServo.write(0);
+setLEDs(false, true);
+digitalWrite(BUZZER, HIGH);
+lcd.setCursor(0, 0);
+lcd.print("PIT IS FULL!");
+lcd.setCursor(0, 1);
+lcd.print("OVERFLOW ALERT");
+}
+// Condition 3: Rain detected and pit has space
+else if (raining) {
+inletServo.write(90);
+setLEDs(true, false);
+lcd.setCursor(0, 0);
+lcd.print("RAIN DETECTED");
+lcd.setCursor(0, 1);
+lcd.print("WATER COLLECTING");
+}
+// Condition 4: No rain and pit has space
+else {
+inletServo.write(0);
+setLEDs(true, false);
+lcd.setCursor(0, 0);
+lcd.print("PIT READY");
+lcd.setCursor(0, 1);
+lcd.print("NO RAIN");
+}
+delay(1000);
+}
